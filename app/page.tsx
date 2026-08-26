@@ -1,3 +1,4 @@
+import { Show, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 
 const features = [
@@ -23,12 +24,25 @@ export default function Home() {
     <div className="flex flex-1 flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
       <header className="flex items-center justify-between px-6 py-5 sm:px-10">
         <p className="text-sm font-semibold tracking-tight">PMS</p>
-        <Link
-          href="/sign-in"
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
-          Sign In
-        </Link>
+        <nav className="flex items-center gap-3">
+          <Show when="signed-out">
+            <Link
+              href="/sign-in"
+              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Sign In
+            </Link>
+          </Show>
+          <Show when="signed-in">
+            <Link
+              href="/dashboard"
+              className="rounded-md px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              Dashboard
+            </Link>
+            <UserButton />
+          </Show>
+        </nav>
       </header>
 
       <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col justify-center px-6 pb-20 pt-10 sm:px-10">
