@@ -74,9 +74,17 @@ export function ReviewPanel({
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [goals, setGoals] = useState<ApprovedGoal[]>([]);
-  const [ratings, setRatings] = useState<Record<string, { comment: string; rating: string }>>(
-    {},
-  );
+  const [ratings, setRatings] = useState<
+    Record<
+      string,
+      {
+        comment: string;
+        rating: string;
+        managerComment: string;
+        managerRating: string;
+      }
+    >
+  >({});
   const [overallSelfRating, setOverallSelfRating] = useState("");
   const [managerEmail, setManagerEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -214,14 +222,30 @@ export function ReviewPanel({
       )
       .eq("review_id", currentReview.id);
 
-    const nextRatings: Record<string, { comment: string; rating: string }> = {};
+    const nextRatings: Record<
+      string,
+      {
+        comment: string;
+        rating: string;
+        managerComment: string;
+        managerRating: string;
+      }
+    > = {};
     for (const goal of approved) {
-      nextRatings[goal.id] = { comment: "", rating: "" };
+      nextRatings[goal.id] = {
+        comment: "",
+        rating: "",
+        managerComment: "",
+        managerRating: "",
+      };
     }
     for (const row of (ratingRows as GoalRating[] | null) ?? []) {
       nextRatings[row.goal_id] = {
         comment: row.self_comment ?? "",
         rating: row.self_rating != null ? String(row.self_rating) : "",
+        managerComment: row.manager_comment ?? "",
+        managerRating:
+          row.manager_rating != null ? String(row.manager_rating) : "",
       };
     }
     setRatings(nextRatings);
@@ -359,9 +383,11 @@ export function ReviewPanel({
     );
   }
 
-  const alreadySubmitted = review?.status === "self_submitted" ||
+  const alreadySubmitted =
+    review?.status === "self_submitted" ||
     review?.status === "reviewed" ||
     review?.status === "completed";
+  const isCompleted = review?.status === "completed";
 
   return (
     <div className="space-y-6">
@@ -393,7 +419,12 @@ export function ReviewPanel({
         className="space-y-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
       >
         {goals.map((goal) => {
-          const entry = ratings[goal.id] ?? { comment: "", rating: "" };
+          const entry = ratings[goal.id] ?? {
+            comment: "",
+            rating: "",
+            managerComment: "",
+            managerRating: "",
+          };
           return (
             <fieldset
               key={goal.id}
@@ -413,6 +444,7 @@ export function ReviewPanel({
                 <textarea
                   required
                   rows={3}
+                  readOnly={alreadySubmitted}
                   disabled={alreadySubmitted}
                   value={entry.comment}
                   onChange={(event) =>
@@ -446,6 +478,19 @@ export function ReviewPanel({
                   ))}
                 </select>
               </label>
+              {isCompleted ? (
+                <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">
+                  <p className="font-medium text-sky-900 dark:text-sky-200">
+                    Manager feedback
+                  </p>
+                  <p className="mt-2 text-zinc-800 dark:text-zinc-200">
+                    {entry.managerComment || "—"}
+                  </p>
+                  <p className="mt-2 text-zinc-800 dark:text-zinc-200">
+                    Manager rating: {entry.managerRating || "—"}
+                  </p>
+                </div>
+              ) : null}
             </fieldset>
           );
         })}
@@ -468,16 +513,29 @@ export function ReviewPanel({
           </select>
         </label>
 
+        {isCompleted ? (
+          <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">
+            <p className="font-medium text-sky-900 dark:text-sky-200">
+              Overall manager rating
+            </p>
+            <p className="mt-1 text-zinc-800 dark:text-zinc-200">
+              {review?.overall_manager_rating ?? "—"}
+            </p>
+          </div>
+        ) : null}
+
         <button
           type="submit"
           disabled={isSubmitting || alreadySubmitted}
           className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
         >
-          {alreadySubmitted
-            ? "Self-appraisal submitted"
-            : isSubmitting
-              ? "Submitting…"
-              : "Submit Self-Appraisal"}
+          {isCompleted
+            ? "Review completed"
+            : alreadySubmitted
+              ? "Self-appraisal submitted"
+              : isSubmitting
+                ? "Submitting…"
+                : "Submit Self-Appraisal"}
         </button>
       </form>
     </div>
