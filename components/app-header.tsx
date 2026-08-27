@@ -24,6 +24,7 @@ function linksForRole(role: EmployeeRole): NavLink[] {
 
   if (role === "hr_admin") {
     shared.push(
+      { href: "/admin", label: "HR Dashboard", match: "exact" },
       { href: "/admin/employees", label: "Employees", match: "prefix" },
       { href: "/admin/cycles", label: "Cycles", match: "prefix" },
     );
