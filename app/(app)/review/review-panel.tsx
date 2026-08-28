@@ -337,6 +337,7 @@ export function ReviewPanel({
             employeeName,
             cycleName: cycle.name,
             reviewId: review.id,
+            employeeId,
           }),
         });
         const result = (await response.json()) as { ok?: boolean };

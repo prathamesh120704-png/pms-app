@@ -65,7 +65,13 @@ export async function sendManagerNotification(
 
     if (error) {
       console.error("[notify-manager] Resend error", error);
-      return { ok: false, error: error.message };
+      return {
+        ok: false,
+        error:
+          "message" in error && typeof error.message === "string"
+            ? error.message
+            : "Resend rejected the email.",
+      };
     }
 
     return { ok: true };

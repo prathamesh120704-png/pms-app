@@ -8,6 +8,7 @@ type NotifyManagerBody = {
   cycleName?: unknown;
   reviewId?: unknown;
   reviewUrl?: unknown;
+  employeeId?: unknown;
 };
 
 function asNonEmptyString(value: unknown): string | null {
@@ -53,10 +54,12 @@ export async function POST(request: NextRequest) {
     const origin =
       process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
       request.nextUrl.origin;
-    const reviewId = asNonEmptyString(body.reviewId);
+    const employeeId = asNonEmptyString(body.employeeId);
     const reviewUrl =
       asNonEmptyString(body.reviewUrl) ||
-      (reviewId ? `${origin}/team/reviews/${reviewId}` : `${origin}/team`);
+      (employeeId
+        ? `${origin}/team/review/${employeeId}`
+        : `${origin}/team`);
 
     const result = await sendManagerNotification({
       managerEmail,
@@ -64,6 +67,10 @@ export async function POST(request: NextRequest) {
       cycleName,
       reviewUrl,
     });
+
+    if (!result.ok) {
+      return Response.json(result, { status: 200 });
+    }
 
     return Response.json(result);
   } catch (error) {
