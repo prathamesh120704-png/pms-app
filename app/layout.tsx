@@ -14,9 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PMS — Performance Management",
+  title: "AlignPMS — Performance Appraisals Reimagined",
   description:
-    "Goals, reviews, and feedback for a 200-person services company.",
+    "From weighted SMART goal planning to side-by-side manager appraisals and HR cycle governance—all in one auditable platform.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -25,11 +25,20 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-full flex flex-col bg-zinc-50 font-sans text-zinc-900">
         <ClerkProvider
-        publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+          publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
           signInFallbackRedirectUrl="/dashboard"
           signUpFallbackRedirectUrl="/dashboard"
+          appearance={{
+            variables: {
+              colorBackground: "#ffffff",
+              colorInputBackground: "#fafafa",
+              colorInputText: "#18181b",
+              colorPrimary: "#4f46e5",
+              colorText: "#52525b",
+            },
+          }}
         >
           {children}
         </ClerkProvider>

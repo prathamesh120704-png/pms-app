@@ -1,5 +1,7 @@
+import { scopedDepartment } from "@/lib/department-scope";
 import { getCurrentEmployee } from "@/lib/get-current-employee";
 import { redirect } from "next/navigation";
+import { pageMain, pageSubtitle, pageTitle } from "@/lib/ui";
 import { ManagerReviewPanel } from "./manager-review-panel";
 
 export default async function TeamEmployeeReviewPage({
@@ -15,15 +17,17 @@ export default async function TeamEmployeeReviewPage({
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-10 sm:px-10">
-      <h1 className="text-2xl font-semibold tracking-tight">
-        Complete performance review
-      </h1>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+    <main className={pageMain}>
+      <h1 className={pageTitle}>Complete performance review</h1>
+      <p className={pageSubtitle}>
         Add your comments and ratings, then submit the final review.
       </p>
       <div className="mt-8">
-        <ManagerReviewPanel employeeId={employee_id} managerId={manager.id} />
+        <ManagerReviewPanel
+          employeeId={employee_id}
+          managerId={manager.id}
+          department={scopedDepartment(manager.department)}
+        />
       </div>
     </main>
   );

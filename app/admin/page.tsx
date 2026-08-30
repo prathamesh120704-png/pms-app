@@ -1,5 +1,8 @@
+import { SeedTestOrganizationButton } from "@/components/seed-test-organization-button";
+import { scopedDepartment } from "@/lib/department-scope";
 import { getCurrentEmployee } from "@/lib/get-current-employee";
 import { redirect } from "next/navigation";
+import { pageMain, pageSubtitle, pageTitle } from "@/lib/ui";
 import { HrDashboard } from "./hr-dashboard";
 
 export default async function AdminHomePage() {
@@ -9,15 +12,23 @@ export default async function AdminHomePage() {
     redirect("/dashboard");
   }
 
+  const department = scopedDepartment(employee.department);
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-10 sm:px-10">
-      <h1 className="text-2xl font-semibold tracking-tight">HR dashboard</h1>
-      <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-        See how the cycle is going so you can help people through it — not to
-        rank or pressure anyone.
-      </p>
+    <main className={pageMain}>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className={pageTitle}>HR dashboard</h1>
+          <p className={pageSubtitle}>
+            {department
+              ? `Cycle progress for ${department} only. Other departments are hidden.`
+              : "Your employee record has no department, so directory data is locked."}
+          </p>
+        </div>
+        <SeedTestOrganizationButton />
+      </div>
       <div className="mt-8">
-        <HrDashboard />
+        <HrDashboard department={department} />
       </div>
     </main>
   );

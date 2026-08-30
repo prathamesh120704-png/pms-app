@@ -3,20 +3,23 @@
 import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-type GoalStatus = "draft" | "submitted" | "approved" | "sent_back";
-
-type Goal = {
-  id: string;
-  employee_id: string;
-  cycle_id: string;
-  title: string;
-  description: string | null;
-  weightage: number;
-  target_date: string | null;
-  status: GoalStatus;
-  manager_comment: string | null;
-};
+import { StatusBadge, goalBadgeTone } from "@/components/status-badge";
+import {
+  GOAL_SELECT,
+  goalStatusLabel,
+  type Goal,
+  type GoalStatus,
+} from "@/lib/goals";
+import {
+  emptyState,
+  errorText,
+  glassCard,
+  glassPanel,
+  inputClass,
+  mutedText,
+  primaryBtn,
+  secondaryBtn,
+} from "@/lib/ui";
 
 type DirectReport = {
   id: string;
@@ -37,9 +40,6 @@ type OpenCycle = {
   name: string;
 };
 
-const inputClassName =
-  "mt-1 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500";
-
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -54,7 +54,13 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString();
 }
 
-export function TeamPanel({ managerId }: { managerId: string }) {
+export function TeamPanel({
+  managerId,
+  department,
+}: {
+  managerId: string;
+  department: string | null;
+}) {
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
   const [reports, setReports] = useState<DirectReport[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -91,9 +97,19 @@ export function TeamPanel({ managerId }: { managerId: string }) {
       return;
     }
 
+    if (!department) {
+      setError("Your employee record has no department, so the team list is locked.");
+      setReports([]);
+      setGoals([]);
+      setPendingAppraisals([]);
+      setIsLoading(false);
+      return;
+    }
+
     const { data: reportRows, error: reportError } = await supabase
       .from("employees")
       .select("id, full_name, designation, email")
+      .eq("department", department)
       .eq("manager_id", managerId)
       .eq("is_active", true)
       .order("full_name");
@@ -120,11 +136,9 @@ export function TeamPanel({ managerId }: { managerId: string }) {
 
     const { data: goalRows, error: goalsError } = await supabase
       .from("goals")
-      .select(
-        "id, employee_id, cycle_id, title, description, weightage, target_date, status, manager_comment",
-      )
+      .select(GOAL_SELECT)
       .eq("cycle_id", openCycle.id)
-      .eq("status", "submitted")
+      .in("status", ["submitted", "rejected"])
       .in("employee_id", reportIds)
       .order("title");
 
@@ -165,15 +179,32 @@ export function TeamPanel({ managerId }: { managerId: string }) {
     }
 
     setIsLoading(false);
-  }, [managerId]);
+  }, [department, managerId]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const goalsByEmployee = useMemo(() => {
+  const submittedByEmployee = useMemo(() => {
     const grouped = new Map<string, Goal[]>();
     for (const goal of goals) {
+      if (goal.status !== "submitted") continue;
+      const list = grouped.get(goal.employee_id) ?? [];
+      list.push(goal);
+      grouped.set(goal.employee_id, list);
+    }
+    return reports
+      .map((report) => ({
+        report,
+        goals: grouped.get(report.id) ?? [],
+      }))
+      .filter((group) => group.goals.length > 0);
+  }, [goals, reports]);
+
+  const rejectedByEmployee = useMemo(() => {
+    const grouped = new Map<string, Goal[]>();
+    for (const goal of goals) {
+      if (goal.status !== "rejected") continue;
       const list = grouped.get(goal.employee_id) ?? [];
       list.push(goal);
       grouped.set(goal.employee_id, list);
@@ -237,143 +268,192 @@ export function TeamPanel({ managerId }: { managerId: string }) {
 
   if (isLoading) {
     return (
-      <p className="px-6 py-16 text-center text-sm text-zinc-500">
-        Loading your team’s submitted goals…
+      <p className={`px-6 py-16 text-center ${mutedText}`}>
+        Loading your team’s submitted and rejected goals…
       </p>
     );
   }
 
   if (!cycle) {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-        There is no open review cycle right now.
-      </p>
+      <p className={emptyState}>There is no open review cycle right now.</p>
     );
   }
 
   if (reports.length === 0) {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-        No one reports to you yet, so there is nothing to approve.
+      <p className={emptyState}>
+        No one in your department reports to you yet, so there is nothing to
+        approve.
       </p>
     );
   }
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Open cycle:{" "}
-        <span className="font-medium text-zinc-900 dark:text-zinc-50">
-          {cycle.name}
-        </span>
-        . Only submitted goals appear here.
+      <p className={mutedText}>
+        Open cycle: <span className="font-medium text-zinc-900">{cycle.name}</span>
+        . Submitted goals wait for approval. Rejected assigned goals stay visible
+        with the employee’s reason.
       </p>
 
-      {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      ) : null}
+      {error ? <p className={errorText}>{error}</p> : null}
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">
           Goals Awaiting Approval
         </h2>
-      {goalsByEmployee.length === 0 ? (
-        <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-          No submitted goals waiting for your approval.
-        </p>
-      ) : (
-        goalsByEmployee.map(({ report, goals: employeeGoals }) => (
-          <section
-            key={report.id}
-            className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-              <h2 className="text-base font-semibold tracking-tight">
-                {report.full_name}
-              </h2>
-              <p className="text-sm text-zinc-500">
-                {report.designation ?? "No designation"}
-              </p>
-            </div>
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
-              {employeeGoals.map((goal) => (
-                <li key={goal.id} className="px-4 py-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="font-medium">{goal.title}</p>
-                      <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                        {goal.description ?? "—"}
-                      </p>
-                      <p className="mt-2 text-xs text-zinc-500">
-                        Weightage {Number(goal.weightage).toFixed(2)} · Target{" "}
-                        {formatDate(goal.target_date)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 gap-2">
-                      <button
-                        type="button"
-                        disabled={actingId === goal.id}
-                        onClick={() => void handleApprove(goal.id)}
-                        className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={actingId === goal.id}
-                        onClick={() => {
-                          setError(null);
-                          setSendBackFor(goal.id);
-                          setSendBackComment("");
-                        }}
-                        className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 disabled:opacity-60 dark:border-zinc-700 dark:hover:bg-zinc-800"
-                      >
-                        Send Back
-                      </button>
-                    </div>
-                  </div>
-                  {sendBackFor === goal.id ? (
-                    <div className="mt-3 max-w-lg">
-                      <label className="block text-sm font-medium">
-                        Comment (required)
-                        <textarea
-                          value={sendBackComment}
-                          onChange={(event) =>
-                            setSendBackComment(event.target.value)
-                          }
-                          rows={3}
-                          className={inputClassName}
-                          placeholder="Tell them what to change."
-                        />
-                      </label>
-                      <div className="mt-2 flex gap-2">
+        {submittedByEmployee.length === 0 ? (
+          <p className={emptyState}>
+            No submitted goals waiting for your approval.
+          </p>
+        ) : (
+          submittedByEmployee.map(({ report, goals: employeeGoals }) => (
+            <section key={report.id} className={`overflow-hidden ${glassPanel}`}>
+              <div className="border-b border-zinc-200/80 px-4 py-3">
+                <h2 className="text-base font-semibold tracking-tight">
+                  {report.full_name}
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  {report.designation ?? "No designation"}
+                </p>
+              </div>
+              <ul className="divide-y divide-zinc-200">
+                {employeeGoals.map((goal) => (
+                  <li key={goal.id} className="px-4 py-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-zinc-900">{goal.title}</p>
+                          <StatusBadge tone={goalBadgeTone(goal.status)}>
+                            {goalStatusLabel[goal.status]}
+                          </StatusBadge>
+                        </div>
+                        <p className="mt-1 text-sm text-zinc-600">
+                          {goal.description ?? "—"}
+                        </p>
+                        <p className="mt-2 text-xs text-zinc-400">
+                          Weightage {Number(goal.weightage).toFixed(2)} · Target{" "}
+                          {formatDate(goal.target_date)}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
                         <button
                           type="button"
                           disabled={actingId === goal.id}
-                          onClick={() => void handleSendBack(goal.id)}
-                          className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                          onClick={() => void handleApprove(goal.id)}
+                          className={primaryBtn}
                         >
-                          Confirm send back
+                          Approve
                         </button>
                         <button
                           type="button"
+                          disabled={actingId === goal.id}
                           onClick={() => {
-                            setSendBackFor(null);
+                            setError(null);
+                            setSendBackFor(goal.id);
                             setSendBackComment("");
                           }}
-                          className="rounded-md px-3 py-1.5 text-sm font-medium text-zinc-600 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                          className={secondaryBtn}
                         >
-                          Cancel
+                          Send Back
                         </button>
                       </div>
                     </div>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))
-      )}
+                    {sendBackFor === goal.id ? (
+                      <div className="mt-3 max-w-lg rounded-lg border border-rose-200 bg-rose-50 p-3">
+                        <label className="block text-sm font-medium text-zinc-600">
+                          Comment (required)
+                          <textarea
+                            value={sendBackComment}
+                            onChange={(event) =>
+                              setSendBackComment(event.target.value)
+                            }
+                            rows={3}
+                            className={inputClass}
+                            placeholder="Tell them what to change."
+                          />
+                        </label>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            type="button"
+                            disabled={actingId === goal.id}
+                            onClick={() => void handleSendBack(goal.id)}
+                            className={primaryBtn}
+                          >
+                            Confirm send back
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSendBackFor(null);
+                              setSendBackComment("");
+                            }}
+                            className={secondaryBtn}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        )}
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Rejected Goals</h2>
+        {rejectedByEmployee.length === 0 ? (
+          <p className={emptyState}>No assigned goals have been rejected.</p>
+        ) : (
+          rejectedByEmployee.map(({ report, goals: employeeGoals }) => (
+            <section
+              key={report.id}
+              className="overflow-hidden rounded-xl border border-rose-200 bg-rose-50/70 shadow-sm"
+            >
+              <div className="border-b border-rose-200/80 bg-rose-50 px-4 py-3">
+                <h2 className="text-base font-semibold tracking-tight text-rose-950">
+                  {report.full_name}
+                </h2>
+                <p className="text-sm text-rose-800/80">
+                  {report.designation ?? "No designation"}
+                </p>
+              </div>
+              <ul className="divide-y divide-rose-200/80">
+                {employeeGoals.map((goal) => (
+                  <li key={goal.id} className="bg-white/70 px-4 py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-zinc-900">{goal.title}</p>
+                      <StatusBadge tone={goalBadgeTone(goal.status)}>
+                        {goalStatusLabel[goal.status]}
+                      </StatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      {goal.description ?? "—"}
+                    </p>
+                    <p className="mt-2 text-xs text-zinc-400">
+                      Weightage {Number(goal.weightage).toFixed(2)} · Target{" "}
+                      {formatDate(goal.target_date)}
+                    </p>
+                    <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                      <p className="text-xs font-medium uppercase tracking-wide text-rose-800">
+                        Rejection reason
+                      </p>
+                      <p className="mt-1 text-sm text-rose-950">
+                        {goal.rejection_reason?.trim()
+                          ? goal.rejection_reason
+                          : "No reason was recorded."}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        )}
       </section>
 
       <section className="space-y-4">
@@ -381,7 +461,7 @@ export function TeamPanel({ managerId }: { managerId: string }) {
           Team Appraisals to Complete
         </h2>
         {pendingAppraisals.length === 0 ? (
-          <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+          <p className={emptyState}>
             No team members have submitted their self-appraisals yet.
           </p>
         ) : (
@@ -389,15 +469,15 @@ export function TeamPanel({ managerId }: { managerId: string }) {
             {pendingAppraisals.map((appraisal) => (
               <li
                 key={appraisal.reviewId}
-                className="flex flex-col justify-between rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900"
+                className={`${glassCard} flex flex-col justify-between p-5`}
               >
                 <div>
-                  <p className="font-medium">{appraisal.fullName}</p>
-                  <p className="mt-1 text-sm text-zinc-500">{appraisal.email}</p>
+                  <p className="font-medium text-zinc-900">{appraisal.fullName}</p>
+                  <p className="mt-1 text-sm text-zinc-400">{appraisal.email}</p>
                 </div>
                 <Link
                   href={`/team/review/${appraisal.employeeId}`}
-                  className="mt-4 inline-flex w-fit rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className={`${primaryBtn} mt-4 w-fit`}
                 >
                   Review Employee
                 </Link>

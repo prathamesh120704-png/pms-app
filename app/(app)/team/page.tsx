@@ -1,5 +1,7 @@
+import { scopedDepartment } from "@/lib/department-scope";
 import { getCurrentEmployee } from "@/lib/get-current-employee";
 import { redirect } from "next/navigation";
+import { pageMain, pageSubtitle, pageTitle } from "@/lib/ui";
 import { TeamPanel } from "./team-panel";
 
 export default async function MyTeamPage() {
@@ -9,14 +11,17 @@ export default async function MyTeamPage() {
     redirect("/dashboard");
   }
 
+  const department = scopedDepartment(employee.department);
+
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-10 sm:px-10">
-      <h1 className="text-2xl font-semibold tracking-tight">My Team</h1>
-      <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-        Review submitted goals from people who report to you.
+    <main className={pageMain}>
+      <h1 className={pageTitle}>My Team</h1>
+      <p className={pageSubtitle}>
+        Review submitted and rejected goals from people in{" "}
+        {department ?? "your department"}.
       </p>
       <div className="mt-8">
-        <TeamPanel managerId={employee.id} />
+        <TeamPanel managerId={employee.id} department={department} />
       </div>
     </main>
   );

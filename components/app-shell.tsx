@@ -27,8 +27,8 @@ export async function AppShell({
   }
 
   return (
-    <div className="flex min-h-full flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-      <AppHeader role={employee.role} />
+    <div className="flex min-h-full flex-col text-zinc-900">
+      <AppHeader role={employee.role} fullName={employee.full_name} />
       <div className="flex flex-1 flex-col">{children}</div>
     </div>
   );

@@ -3,6 +3,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import {
+  emptyState,
+  errorText,
+  contrastPanel,
+  glassPanel,
+  inputClass,
+  mutedText,
+  primaryBtn,
+} from "@/lib/ui";
 
 type ReviewStatus = "draft" | "self_submitted" | "reviewed" | "completed";
 
@@ -39,9 +48,6 @@ type OpenCycle = {
   name: string;
 };
 
-const inputClassName =
-  "mt-1 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500";
-
 const ratingOptions = [1, 2, 3, 4, 5] as const;
 
 function getSupabase() {
@@ -60,9 +66,11 @@ function goalFromEmbed(goal: GoalEmbed | GoalEmbed[] | null): GoalEmbed | null {
 export function ManagerReviewPanel({
   employeeId,
   managerId,
+  department,
 }: {
   employeeId: string;
   managerId: string;
+  department: string | null;
 }) {
   const router = useRouter();
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
@@ -87,10 +95,17 @@ export function ManagerReviewPanel({
 
     setError(null);
 
+    if (!department) {
+      setError("Your employee record has no department, so this review is locked.");
+      setIsLoading(false);
+      return;
+    }
+
     const { data: employeeRow } = await supabase
       .from("employees")
       .select("full_name, manager_id")
       .eq("id", employeeId)
+      .eq("department", department)
       .maybeSingle();
 
     if (!employeeRow || employeeRow.manager_id !== managerId) {
@@ -185,7 +200,7 @@ export function ManagerReviewPanel({
     }
     setManagerInputs(inputs);
     setIsLoading(false);
-  }, [employeeId, managerId]);
+  }, [department, employeeId, managerId]);
 
   useEffect(() => {
     void load();
@@ -263,15 +278,13 @@ export function ManagerReviewPanel({
 
   if (isLoading) {
     return (
-      <p className="px-6 py-16 text-center text-sm text-zinc-500">
-        Loading this review…
-      </p>
+      <p className={`px-6 py-16 text-center ${mutedText}`}>Loading this review…</p>
     );
   }
 
   if (!cycle) {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className={emptyState}>
         There is no open review cycle right now.
       </p>
     );
@@ -279,7 +292,7 @@ export function ManagerReviewPanel({
 
   if (!review) {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className={emptyState}>
         No self-appraisal was found for this person in the open cycle.
       </p>
     );
@@ -287,7 +300,7 @@ export function ManagerReviewPanel({
 
   if (review.status !== "self_submitted") {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className={emptyState}>
         {review.status === "completed"
           ? "This review is already completed."
           : "This employee has not submitted their self-appraisal yet."}
@@ -297,7 +310,7 @@ export function ManagerReviewPanel({
 
   if (rows.length === 0) {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+      <p className={emptyState}>
         There are no goal ratings on this self-appraisal yet.
       </p>
     );
@@ -305,107 +318,98 @@ export function ManagerReviewPanel({
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <p className={mutedText}>
         Completing the review for{" "}
-        <span className="font-medium text-zinc-900 dark:text-zinc-50">
-          {employeeName}
-        </span>{" "}
-        · {cycle.name}
+        <span className="font-medium text-zinc-900">{employeeName}</span> ·{" "}
+        {cycle.name}
       </p>
 
-      {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      ) : null}
+      {error ? <p className={errorText}>{error}</p> : null}
 
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
-      >
+      <form onSubmit={handleSubmit} className={`${glassPanel} space-y-6 p-6`}>
         {rows.map((row) => {
           const goal = goalFromEmbed(row.goal);
           const entry = managerInputs[row.id] ?? { comment: "", rating: "" };
           return (
             <fieldset
               key={row.id}
-              className="space-y-3 border-b border-zinc-200 pb-6 last:border-b-0 last:pb-0 dark:border-zinc-800"
+              className="space-y-3 border-b border-zinc-200/80 pb-6 last:border-b-0 last:pb-0"
             >
-              <legend className="text-base font-semibold tracking-tight">
+              <legend className="text-base font-semibold tracking-tight text-zinc-900">
                 {goal?.title ?? "Goal"}
               </legend>
-              <p className="text-xs text-zinc-500">
-                Weightage{" "}
-                {goal ? Number(goal.weightage).toFixed(2) : "—"}
+              <p className="text-xs text-zinc-400">
+                Weightage {goal ? Number(goal.weightage).toFixed(2) : "—"}
               </p>
               {goal?.description ? (
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  {goal.description}
-                </p>
+                <p className={mutedText}>{goal.description}</p>
               ) : null}
 
-              <div className="rounded-md bg-zinc-50 p-3 text-sm dark:bg-zinc-950">
-                <p className="font-medium text-zinc-500">Employee self-appraisal</p>
-                <p className="mt-2 text-zinc-700 dark:text-zinc-300">
-                  {row.self_comment || "—"}
-                </p>
-                <p className="mt-2 text-zinc-700 dark:text-zinc-300">
-                  Self rating: {row.self_rating ?? "—"}
-                </p>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className={`${contrastPanel} p-4 text-sm`}>
+                  <p className="font-medium text-zinc-900">Employee self-appraisal</p>
+                  <p className="mt-2 text-zinc-600">{row.self_comment || "—"}</p>
+                  <p className="mt-2 text-zinc-400">
+                    Self rating: {row.self_rating ?? "—"}
+                  </p>
+                </div>
+                <div className={`space-y-3 p-4 ${contrastPanel}`}>
+                  <label className="block text-sm font-medium text-zinc-700">
+                    Manager comment
+                    <textarea
+                      required
+                      rows={3}
+                      value={entry.comment}
+                      onChange={(event) =>
+                        setManagerInputs((current) => ({
+                          ...current,
+                          [row.id]: { ...entry, comment: event.target.value },
+                        }))
+                      }
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="block text-sm font-medium text-zinc-700">
+                    Manager rating
+                    <select
+                      required
+                      value={entry.rating}
+                      onChange={(event) =>
+                        setManagerInputs((current) => ({
+                          ...current,
+                          [row.id]: { ...entry, rating: event.target.value },
+                        }))
+                      }
+                      className={inputClass}
+                    >
+                      <option value="">Select 1–5</option>
+                      {ratingOptions.map((value) => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </div>
-
-              <label className="block text-sm font-medium">
-                Manager comment
-                <textarea
-                  required
-                  rows={3}
-                  value={entry.comment}
-                  onChange={(event) =>
-                    setManagerInputs((current) => ({
-                      ...current,
-                      [row.id]: { ...entry, comment: event.target.value },
-                    }))
-                  }
-                  className={inputClassName}
-                />
-              </label>
-              <label className="block text-sm font-medium">
-                Manager rating
-                <select
-                  required
-                  value={entry.rating}
-                  onChange={(event) =>
-                    setManagerInputs((current) => ({
-                      ...current,
-                      [row.id]: { ...entry, rating: event.target.value },
-                    }))
-                  }
-                  className={inputClassName}
-                >
-                  <option value="">Select 1–5</option>
-                  {ratingOptions.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
             </fieldset>
           );
         })}
 
-        <div className="rounded-md bg-zinc-50 p-3 text-sm dark:bg-zinc-950">
-          <p className="font-medium text-zinc-500">Overall self rating</p>
-          <p className="mt-1 text-zinc-700 dark:text-zinc-300">
+        <div className={`${contrastPanel} p-4 text-sm`}>
+          <p className="font-medium text-zinc-900">Overall self rating</p>
+          <p className="mt-1 text-zinc-600">
             {review.overall_self_rating ?? "—"}
           </p>
         </div>
 
-        <label className="block text-sm font-medium">
+        <label className="block text-sm font-medium text-zinc-600">
           Overall manager rating
           <select
             required
             value={overallManagerRating}
             onChange={(event) => setOverallManagerRating(event.target.value)}
-            className={inputClassName}
+            className={inputClass}
           >
             <option value="">Select 1–5</option>
             {ratingOptions.map((value) => (
@@ -416,11 +420,7 @@ export function ManagerReviewPanel({
           </select>
         </label>
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-60 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-        >
+        <button type="submit" disabled={isSubmitting} className={primaryBtn}>
           {isSubmitting ? "Submitting…" : "Submit Final Review"}
         </button>
       </form>

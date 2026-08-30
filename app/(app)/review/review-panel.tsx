@@ -2,6 +2,16 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { StatusBadge, reviewBadgeTone } from "@/components/status-badge";
+import {
+  emptyState,
+  errorText,
+  contrastPanel,
+  glassPanel,
+  inputClass,
+  mutedText,
+  primaryBtn,
+} from "@/lib/ui";
 
 type ReviewStatus = "draft" | "self_submitted" | "reviewed" | "completed";
 
@@ -43,9 +53,6 @@ type OpenCycle = {
 const reviewColumns =
   "id, employee_id, manager_id, cycle_id, status, overall_self_rating, overall_manager_rating, manager_summary, submitted_at, reviewed_at";
 
-const inputClassName =
-  "mt-1 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-500";
-
 const ratingOptions = [1, 2, 3, 4, 5] as const;
 
 const statusLabel: Record<ReviewStatus, string> = {
@@ -66,10 +73,12 @@ export function ReviewPanel({
   employeeId,
   employeeName,
   managerId,
+  department,
 }: {
   employeeId: string;
   employeeName: string;
   managerId: string | null;
+  department: string | null;
 }) {
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
   const [review, setReview] = useState<Review | null>(null);
@@ -102,6 +111,22 @@ export function ReviewPanel({
 
     setError(null);
 
+    const departmentName = department?.trim() || null;
+
+    const selfQuery = supabase
+      .from("employees")
+      .select("id")
+      .eq("id", employeeId);
+    const { data: self } = departmentName
+      ? await selfQuery.eq("department", departmentName).maybeSingle()
+      : await selfQuery.maybeSingle();
+
+    if (!self) {
+      setError("You can only load a review for your own employee record.");
+      setIsLoading(false);
+      return;
+    }
+
     const { data: cycleRow, error: cycleError } = await supabase
       .from("review_cycles")
       .select("id, name")
@@ -128,11 +153,14 @@ export function ReviewPanel({
     setCycle(openCycle);
 
     if (managerId) {
-      const { data: manager } = await supabase
+      let managerQuery = supabase
         .from("employees")
         .select("email")
-        .eq("id", managerId)
-        .maybeSingle();
+        .eq("id", managerId);
+      if (departmentName) {
+        managerQuery = managerQuery.eq("department", departmentName);
+      }
+      const { data: manager } = await managerQuery.maybeSingle();
       setManagerEmail(
         typeof manager?.email === "string" ? manager.email : null,
       );
@@ -202,7 +230,7 @@ export function ReviewPanel({
       .select("id, title, description, weightage")
       .eq("employee_id", employeeId)
       .eq("cycle_id", openCycle.id)
-      .eq("status", "approved")
+      .in("status", ["approved", "accepted"])
       .order("title");
 
     if (goalsError) {
@@ -250,7 +278,7 @@ export function ReviewPanel({
     }
     setRatings(nextRatings);
     setIsLoading(false);
-  }, [employeeId, managerId]);
+  }, [department, employeeId, managerId]);
 
   useEffect(() => {
     void load();
@@ -361,7 +389,7 @@ export function ReviewPanel({
 
   if (isLoading) {
     return (
-      <p className="px-6 py-16 text-center text-sm text-zinc-500">
+      <p className={`px-6 py-16 text-center ${mutedText}`}>
         Loading your self-appraisal…
       </p>
     );
@@ -369,16 +397,14 @@ export function ReviewPanel({
 
   if (!cycle) {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-        There is no open review cycle right now.
-      </p>
+      <p className={emptyState}>There is no open review cycle right now.</p>
     );
   }
 
   if (goals.length === 0) {
     return (
-      <p className="rounded-lg border border-zinc-200 bg-white px-6 py-16 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-        Your goals must be approved by your manager first before you can start
+      <p className={emptyState}>
+        Your goals must be approved or accepted first before you can start
         a self-appraisal.
       </p>
     );
@@ -392,33 +418,23 @@ export function ReviewPanel({
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Cycle:{" "}
-        <span className="font-medium text-zinc-900 dark:text-zinc-50">
-          {cycle.name}
-        </span>
+      <p className={mutedText}>
+        Cycle: <span className="font-medium text-zinc-900">{cycle.name}</span>
         {review ? (
           <>
             {" "}
             · Status:{" "}
-            <span className="font-medium text-zinc-900 dark:text-zinc-50">
+            <StatusBadge tone={reviewBadgeTone(review.status)}>
               {statusLabel[review.status]}
-            </span>
+            </StatusBadge>
           </>
         ) : null}
       </p>
 
-      {error ? (
-        <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-      ) : null}
-      {notice ? (
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">{notice}</p>
-      ) : null}
+      {error ? <p className={errorText}>{error}</p> : null}
+      {notice ? <p className="text-sm text-indigo-700">{notice}</p> : null}
 
-      <form
-        onSubmit={handleSubmit}
-        className="space-y-6 rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
-      >
+      <form onSubmit={handleSubmit} className={`${glassPanel} space-y-6 p-6`}>
         {goals.map((goal) => {
           const entry = ratings[goal.id] ?? {
             comment: "",
@@ -429,18 +445,16 @@ export function ReviewPanel({
           return (
             <fieldset
               key={goal.id}
-              className="space-y-3 border-b border-zinc-200 pb-6 last:border-b-0 last:pb-0 dark:border-zinc-800"
+              className="space-y-3 border-b border-zinc-200/80 pb-6 last:border-b-0 last:pb-0"
             >
-              <legend className="text-base font-semibold tracking-tight">
+              <legend className="text-base font-semibold tracking-tight text-zinc-900">
                 {goal.title}
               </legend>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                {goal.description ?? "—"}
-              </p>
-              <p className="text-xs text-zinc-500">
+              <p className={mutedText}>{goal.description ?? "—"}</p>
+              <p className="text-xs text-zinc-400">
                 Weightage {Number(goal.weightage).toFixed(2)}
               </p>
-              <label className="block text-sm font-medium">
+              <label className="block text-sm font-medium text-zinc-600">
                 Self comment
                 <textarea
                   required
@@ -454,10 +468,10 @@ export function ReviewPanel({
                       [goal.id]: { ...entry, comment: event.target.value },
                     }))
                   }
-                  className={inputClassName}
+                  className={inputClass}
                 />
               </label>
-              <label className="block text-sm font-medium">
+              <label className="block text-sm font-medium text-zinc-600">
                 Self rating
                 <select
                   required
@@ -469,7 +483,7 @@ export function ReviewPanel({
                       [goal.id]: { ...entry, rating: event.target.value },
                     }))
                   }
-                  className={inputClassName}
+                  className={inputClass}
                 >
                   <option value="">Select 1–5</option>
                   {ratingOptions.map((value) => (
@@ -480,14 +494,12 @@ export function ReviewPanel({
                 </select>
               </label>
               {isCompleted ? (
-                <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">
-                  <p className="font-medium text-sky-900 dark:text-sky-200">
-                    Manager feedback
-                  </p>
-                  <p className="mt-2 text-zinc-800 dark:text-zinc-200">
+                <div className={`${contrastPanel} p-4 text-sm`}>
+                  <p className="font-medium text-zinc-900">Manager feedback</p>
+                  <p className="mt-2 text-zinc-600">
                     {entry.managerComment || "—"}
                   </p>
-                  <p className="mt-2 text-zinc-800 dark:text-zinc-200">
+                  <p className="mt-2 text-zinc-600">
                     Manager rating: {entry.managerRating || "—"}
                   </p>
                 </div>
@@ -496,14 +508,14 @@ export function ReviewPanel({
           );
         })}
 
-        <label className="block text-sm font-medium">
+        <label className="block text-sm font-medium text-zinc-600">
           Overall self rating
           <select
             required
             disabled={alreadySubmitted}
             value={overallSelfRating}
             onChange={(event) => setOverallSelfRating(event.target.value)}
-            className={inputClassName}
+            className={inputClass}
           >
             <option value="">Select 1–5</option>
             {ratingOptions.map((value) => (
@@ -515,11 +527,9 @@ export function ReviewPanel({
         </label>
 
         {isCompleted ? (
-          <div className="rounded-md border border-sky-200 bg-sky-50 p-3 text-sm dark:border-sky-900 dark:bg-sky-950/40">
-            <p className="font-medium text-sky-900 dark:text-sky-200">
-              Overall manager rating
-            </p>
-            <p className="mt-1 text-zinc-800 dark:text-zinc-200">
+          <div className={`${contrastPanel} p-4 text-sm`}>
+            <p className="font-medium text-zinc-900">Overall manager rating</p>
+            <p className="mt-1 text-zinc-600">
               {review?.overall_manager_rating ?? "—"}
             </p>
           </div>
@@ -528,7 +538,7 @@ export function ReviewPanel({
         <button
           type="submit"
           disabled={isSubmitting || alreadySubmitted}
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          className={primaryBtn}
         >
           {isCompleted
             ? "Review completed"
