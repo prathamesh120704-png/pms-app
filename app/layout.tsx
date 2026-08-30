@@ -34,7 +34,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             variables: {
               colorBackground: "#ffffff",
               colorPrimary: "#4f46e5",
-              colorText: "#52525b",
             },
           }}
         >
