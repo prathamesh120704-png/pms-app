@@ -92,8 +92,6 @@ export function ManagerReviewPanel({
       setManagerInputs((current) => ({
         ...current,
         [rowId]: {
-          comment: "",
-          rating: "",
           ...current[rowId],
           ...patch,
         },
