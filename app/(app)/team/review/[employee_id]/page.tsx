@@ -1,4 +1,3 @@
-import { scopedDepartment } from "@/lib/department-scope";
 import { getCurrentEmployee } from "@/lib/get-current-employee";
 import { redirect } from "next/navigation";
 import { pageMain, pageSubtitle, pageTitle } from "@/lib/ui";
@@ -23,11 +22,7 @@ export default async function TeamEmployeeReviewPage({
         Add your comments and ratings, then submit the final review.
       </p>
       <div className="mt-8">
-        <ManagerReviewPanel
-          employeeId={employee_id}
-          managerId={manager.id}
-          department={scopedDepartment(manager.department)}
-        />
+        <ManagerReviewPanel employeeId={employee_id} managerId={manager.id} />
       </div>
     </main>
   );

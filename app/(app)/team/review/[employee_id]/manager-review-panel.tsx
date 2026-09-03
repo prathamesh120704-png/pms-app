@@ -3,6 +3,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { GoalEvaluationFields } from "@/components/goal-evaluation-fields";
 import {
   emptyState,
   errorText,
@@ -66,11 +67,9 @@ function goalFromEmbed(goal: GoalEmbed | GoalEmbed[] | null): GoalEmbed | null {
 export function ManagerReviewPanel({
   employeeId,
   managerId,
-  department,
 }: {
   employeeId: string;
   managerId: string;
-  department: string | null;
 }) {
   const router = useRouter();
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
@@ -85,6 +84,24 @@ export function ManagerReviewPanel({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const updateManagerInput = useCallback(
+    (
+      rowId: string,
+      patch: Partial<{ comment: string; rating: string }>,
+    ) => {
+      setManagerInputs((current) => ({
+        ...current,
+        [rowId]: {
+          comment: "",
+          rating: "",
+          ...current[rowId],
+          ...patch,
+        },
+      }));
+    },
+    [],
+  );
+
   const load = useCallback(async () => {
     const supabase = getSupabase();
     if (!supabase) {
@@ -95,17 +112,10 @@ export function ManagerReviewPanel({
 
     setError(null);
 
-    if (!department) {
-      setError("Your employee record has no department, so this review is locked.");
-      setIsLoading(false);
-      return;
-    }
-
     const { data: employeeRow } = await supabase
       .from("employees")
       .select("full_name, manager_id")
       .eq("id", employeeId)
-      .eq("department", department)
       .maybeSingle();
 
     if (!employeeRow || employeeRow.manager_id !== managerId) {
@@ -200,7 +210,7 @@ export function ManagerReviewPanel({
     }
     setManagerInputs(inputs);
     setIsLoading(false);
-  }, [department, employeeId, managerId]);
+  }, [employeeId, managerId]);
 
   useEffect(() => {
     void load();
@@ -331,68 +341,53 @@ export function ManagerReviewPanel({
           const goal = goalFromEmbed(row.goal);
           const entry = managerInputs[row.id] ?? { comment: "", rating: "" };
           return (
-            <fieldset
-              key={row.id}
-              className="space-y-3 border-b border-zinc-200/80 pb-6 last:border-b-0 last:pb-0"
-            >
-              <legend className="text-base font-semibold tracking-tight text-zinc-900">
-                {goal?.title ?? "Goal"}
-              </legend>
-              <p className="text-xs text-zinc-400">
-                Weightage {goal ? Number(goal.weightage).toFixed(2) : "—"}
-              </p>
-              {goal?.description ? (
-                <p className={mutedText}>{goal.description}</p>
-              ) : null}
+            <div key={row.id} className="space-y-4 border-b border-zinc-200/80 pb-6 last:border-b-0 last:pb-0">
+              <GoalEvaluationFields
+                goalTitle={goal?.title ?? "Goal"}
+                goalDescription={goal?.description ?? null}
+                weightage={goal ? Number(goal.weightage) : 0}
+                selfComment={row.self_comment ?? ""}
+                selfRating={
+                  row.self_rating != null ? String(row.self_rating) : ""
+                }
+                canEditSelf={false}
+                onSelfCommentChange={() => undefined}
+                onSelfRatingChange={() => undefined}
+              />
 
-              <div className="grid gap-4 lg:grid-cols-2">
-                <div className={`${contrastPanel} p-4 text-sm`}>
-                  <p className="font-medium text-zinc-900">Employee self-appraisal</p>
-                  <p className="mt-2 text-zinc-600">{row.self_comment || "—"}</p>
-                  <p className="mt-2 text-zinc-400">
-                    Self rating: {row.self_rating ?? "—"}
-                  </p>
-                </div>
-                <div className={`space-y-3 p-4 ${contrastPanel}`}>
-                  <label className="block text-sm font-medium text-zinc-700">
-                    Manager comment
-                    <textarea
-                      required
-                      rows={3}
-                      value={entry.comment}
-                      onChange={(event) =>
-                        setManagerInputs((current) => ({
-                          ...current,
-                          [row.id]: { ...entry, comment: event.target.value },
-                        }))
-                      }
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="block text-sm font-medium text-zinc-700">
-                    Manager rating
-                    <select
-                      required
-                      value={entry.rating}
-                      onChange={(event) =>
-                        setManagerInputs((current) => ({
-                          ...current,
-                          [row.id]: { ...entry, rating: event.target.value },
-                        }))
-                      }
-                      className={inputClass}
-                    >
-                      <option value="">Select 1–5</option>
-                      {ratingOptions.map((value) => (
-                        <option key={value} value={value}>
-                          {value}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+              <div className={`space-y-3 p-4 ${contrastPanel}`}>
+                <label className="block text-sm font-medium text-zinc-700">
+                  Manager comment
+                  <textarea
+                    required
+                    rows={3}
+                    value={entry.comment}
+                    onChange={(event) =>
+                      updateManagerInput(row.id, { comment: event.target.value })
+                    }
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block text-sm font-medium text-zinc-700">
+                  Manager rating
+                  <select
+                    required
+                    value={entry.rating}
+                    onChange={(event) =>
+                      updateManagerInput(row.id, { rating: event.target.value })
+                    }
+                    className={inputClass}
+                  >
+                    <option value="">Select 1–5</option>
+                    {ratingOptions.map((value) => (
+                      <option key={value} value={value}>
+                        {value}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
-            </fieldset>
+            </div>
           );
         })}
 

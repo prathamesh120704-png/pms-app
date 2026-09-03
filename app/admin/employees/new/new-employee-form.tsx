@@ -27,11 +27,7 @@ const roles: { value: EmployeeRole; label: string }[] = [
   { value: "hr_admin", label: "HR Admin" },
 ];
 
-export function NewEmployeeForm({
-  department,
-}: {
-  department: string | null;
-}) {
+export function NewEmployeeForm() {
   const router = useRouter();
   const [managers, setManagers] = useState<ManagerOption[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,23 +41,18 @@ export function NewEmployeeForm({
       return;
     }
 
-    if (!department) {
-      return;
-    }
-
     const supabase = createClient(url, anonKey);
 
     void supabase
       .from("employees")
       .select("id, full_name")
-      .eq("department", department)
       .eq("role", "manager")
       .eq("is_active", true)
       .order("full_name")
       .then(({ data }) => {
         setManagers((data as ManagerOption[] | null) ?? []);
       });
-  }, [department]);
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -77,12 +68,6 @@ export function NewEmployeeForm({
       return;
     }
 
-    if (!department) {
-      setError("Your employee record has no department, so you cannot add people.");
-      setIsSubmitting(false);
-      return;
-    }
-
     const form = new FormData(event.currentTarget);
     const managerId = String(form.get("manager_id") ?? "");
     const supabase = createClient(url, anonKey);
@@ -92,7 +77,7 @@ export function NewEmployeeForm({
       full_name: String(form.get("full_name") ?? "").trim(),
       email: String(form.get("email") ?? "").trim().toLowerCase(),
       designation: String(form.get("designation") ?? "").trim() || null,
-      department,
+      department: String(form.get("department") ?? "").trim() || null,
       date_of_joining: String(form.get("date_of_joining") ?? "") || null,
       role: String(form.get("role") ?? "employee") as EmployeeRole,
       manager_id: managerId || null,
@@ -154,13 +139,7 @@ export function NewEmployeeForm({
 
           <label className="block text-sm font-medium text-zinc-600">
             Department
-            <input
-              name="department"
-              type="text"
-              readOnly
-              value={department ?? ""}
-              className={inputClass}
-            />
+            <input name="department" type="text" className={inputClass} />
           </label>
 
           <label className="block text-sm font-medium text-zinc-600">
@@ -197,11 +176,7 @@ export function NewEmployeeForm({
 
           {error ? <p className={errorText}>{error}</p> : null}
 
-          <button
-            type="submit"
-            disabled={isSubmitting || !department}
-            className={primaryBtn}
-          >
+          <button type="submit" disabled={isSubmitting} className={primaryBtn}>
             {isSubmitting ? "Saving…" : "Add employee"}
           </button>
         </form>

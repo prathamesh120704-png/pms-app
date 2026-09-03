@@ -2,7 +2,9 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { GoalEvaluationFields } from "@/components/goal-evaluation-fields";
 import { StatusBadge, reviewBadgeTone } from "@/components/status-badge";
+import type { EmployeeRole } from "@/lib/get-current-employee";
 import {
   emptyState,
   errorText,
@@ -50,6 +52,13 @@ type OpenCycle = {
   name: string;
 };
 
+type GoalRatingState = {
+  comment: string;
+  rating: string;
+  managerComment: string;
+  managerRating: string;
+};
+
 const reviewColumns =
   "id, employee_id, manager_id, cycle_id, status, overall_self_rating, overall_manager_rating, manager_summary, submitted_at, reviewed_at";
 
@@ -62,6 +71,15 @@ const statusLabel: Record<ReviewStatus, string> = {
   completed: "Completed",
 };
 
+function emptyRatingState(): GoalRatingState {
+  return {
+    comment: "",
+    rating: "",
+    managerComment: "",
+    managerRating: "",
+  };
+}
+
 function getSupabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -73,33 +91,37 @@ export function ReviewPanel({
   employeeId,
   employeeName,
   managerId,
-  department,
+  role,
 }: {
   employeeId: string;
   employeeName: string;
   managerId: string | null;
-  department: string | null;
+  role: EmployeeRole;
 }) {
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [goals, setGoals] = useState<ApprovedGoal[]>([]);
-  const [ratings, setRatings] = useState<
-    Record<
-      string,
-      {
-        comment: string;
-        rating: string;
-        managerComment: string;
-        managerRating: string;
-      }
-    >
-  >({});
+  const [ratings, setRatings] = useState<Record<string, GoalRatingState>>({});
   const [overallSelfRating, setOverallSelfRating] = useState("");
   const [managerEmail, setManagerEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const updateGoalRating = useCallback(
+    (goalId: string, patch: Partial<Pick<GoalRatingState, "comment" | "rating">>) => {
+      setRatings((current) => ({
+        ...current,
+        [goalId]: {
+          ...emptyRatingState(),
+          ...current[goalId],
+          ...patch,
+        },
+      }));
+    },
+    [],
+  );
 
   const load = useCallback(async () => {
     const supabase = getSupabase();
@@ -111,15 +133,11 @@ export function ReviewPanel({
 
     setError(null);
 
-    const departmentName = department?.trim() || null;
-
-    const selfQuery = supabase
+    const { data: self } = await supabase
       .from("employees")
       .select("id")
-      .eq("id", employeeId);
-    const { data: self } = departmentName
-      ? await selfQuery.eq("department", departmentName).maybeSingle()
-      : await selfQuery.maybeSingle();
+      .eq("id", employeeId)
+      .maybeSingle();
 
     if (!self) {
       setError("You can only load a review for your own employee record.");
@@ -153,14 +171,11 @@ export function ReviewPanel({
     setCycle(openCycle);
 
     if (managerId) {
-      let managerQuery = supabase
+      const { data: manager } = await supabase
         .from("employees")
         .select("email")
-        .eq("id", managerId);
-      if (departmentName) {
-        managerQuery = managerQuery.eq("department", departmentName);
-      }
-      const { data: manager } = await managerQuery.maybeSingle();
+        .eq("id", managerId)
+        .maybeSingle();
       setManagerEmail(
         typeof manager?.email === "string" ? manager.email : null,
       );
@@ -250,22 +265,9 @@ export function ReviewPanel({
       )
       .eq("review_id", currentReview.id);
 
-    const nextRatings: Record<
-      string,
-      {
-        comment: string;
-        rating: string;
-        managerComment: string;
-        managerRating: string;
-      }
-    > = {};
+    const nextRatings: Record<string, GoalRatingState> = {};
     for (const goal of approved) {
-      nextRatings[goal.id] = {
-        comment: "",
-        rating: "",
-        managerComment: "",
-        managerRating: "",
-      };
+      nextRatings[goal.id] = emptyRatingState();
     }
     for (const row of (ratingRows as GoalRating[] | null) ?? []) {
       nextRatings[row.goal_id] = {
@@ -278,7 +280,7 @@ export function ReviewPanel({
     }
     setRatings(nextRatings);
     setIsLoading(false);
-  }, [department, employeeId, managerId]);
+  }, [employeeId, managerId]);
 
   useEffect(() => {
     void load();
@@ -302,11 +304,11 @@ export function ReviewPanel({
 
     const ratingRows = [];
     for (const goal of goals) {
-      const entry = ratings[goal.id];
-      const rating = Number(entry?.rating);
-      const comment = entry?.comment.trim() ?? "";
+      const entry = ratings[goal.id] ?? emptyRatingState();
+      const rating = Number(entry.rating);
+      const comment = entry.comment.trim();
       if (!comment || !Number.isInteger(rating) || rating < 1 || rating > 5) {
-        setError("Add a comment and a 1–5 rating for every approved goal.");
+        setError("Add a comment and a 1–5 rating for every active goal.");
         return;
       }
       ratingRows.push({
@@ -415,6 +417,7 @@ export function ReviewPanel({
     review?.status === "reviewed" ||
     review?.status === "completed";
   const isCompleted = review?.status === "completed";
+  const canEditSelfFields = role === "employee" && !alreadySubmitted;
 
   return (
     <div className="space-y-6">
@@ -436,75 +439,26 @@ export function ReviewPanel({
 
       <form onSubmit={handleSubmit} className={`${glassPanel} space-y-6 p-6`}>
         {goals.map((goal) => {
-          const entry = ratings[goal.id] ?? {
-            comment: "",
-            rating: "",
-            managerComment: "",
-            managerRating: "",
-          };
+          const entry = ratings[goal.id] ?? emptyRatingState();
           return (
-            <fieldset
+            <GoalEvaluationFields
               key={goal.id}
-              className="space-y-3 border-b border-zinc-200/80 pb-6 last:border-b-0 last:pb-0"
-            >
-              <legend className="text-base font-semibold tracking-tight text-zinc-900">
-                {goal.title}
-              </legend>
-              <p className={mutedText}>{goal.description ?? "—"}</p>
-              <p className="text-xs text-zinc-400">
-                Weightage {Number(goal.weightage).toFixed(2)}
-              </p>
-              <label className="block text-sm font-medium text-zinc-600">
-                Self comment
-                <textarea
-                  required
-                  rows={3}
-                  readOnly={alreadySubmitted}
-                  disabled={alreadySubmitted}
-                  value={entry.comment}
-                  onChange={(event) =>
-                    setRatings((current) => ({
-                      ...current,
-                      [goal.id]: { ...entry, comment: event.target.value },
-                    }))
-                  }
-                  className={inputClass}
-                />
-              </label>
-              <label className="block text-sm font-medium text-zinc-600">
-                Self rating
-                <select
-                  required
-                  disabled={alreadySubmitted}
-                  value={entry.rating}
-                  onChange={(event) =>
-                    setRatings((current) => ({
-                      ...current,
-                      [goal.id]: { ...entry, rating: event.target.value },
-                    }))
-                  }
-                  className={inputClass}
-                >
-                  <option value="">Select 1–5</option>
-                  {ratingOptions.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {isCompleted ? (
-                <div className={`${contrastPanel} p-4 text-sm`}>
-                  <p className="font-medium text-zinc-900">Manager feedback</p>
-                  <p className="mt-2 text-zinc-600">
-                    {entry.managerComment || "—"}
-                  </p>
-                  <p className="mt-2 text-zinc-600">
-                    Manager rating: {entry.managerRating || "—"}
-                  </p>
-                </div>
-              ) : null}
-            </fieldset>
+              goalTitle={goal.title}
+              goalDescription={goal.description}
+              weightage={Number(goal.weightage)}
+              selfComment={entry.comment}
+              selfRating={entry.rating}
+              canEditSelf={canEditSelfFields}
+              onSelfCommentChange={(value) =>
+                updateGoalRating(goal.id, { comment: value })
+              }
+              onSelfRatingChange={(value) =>
+                updateGoalRating(goal.id, { rating: value })
+              }
+              managerComment={entry.managerComment}
+              managerRating={entry.managerRating}
+              showManagerFeedback={isCompleted}
+            />
           );
         })}
 
@@ -512,7 +466,7 @@ export function ReviewPanel({
           Overall self rating
           <select
             required
-            disabled={alreadySubmitted}
+            disabled={!canEditSelfFields}
             value={overallSelfRating}
             onChange={(event) => setOverallSelfRating(event.target.value)}
             className={inputClass}
@@ -537,7 +491,7 @@ export function ReviewPanel({
 
         <button
           type="submit"
-          disabled={isSubmitting || alreadySubmitted}
+          disabled={isSubmitting || !canEditSelfFields}
           className={primaryBtn}
         >
           {isCompleted

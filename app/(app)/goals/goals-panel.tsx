@@ -5,14 +5,19 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { StatusBadge, goalBadgeTone } from "@/components/status-badge";
 import {
   acceptAssignedGoal,
+  createGoal,
+  deleteCompletedGoal,
   rejectAssignedGoal,
+  submitDraftGoals,
 } from "@/app/(app)/goals/actions";
+import type { EmployeeRole } from "@/lib/get-current-employee";
 import {
   GOAL_SELECT,
+  bypassesGoalApproval,
   goalStatusLabel,
   isAssignedPending,
+  isCompletedGoal,
   type Goal,
-  type GoalStatus,
 } from "@/lib/goals";
 import {
   emptyState,
@@ -56,11 +61,14 @@ function formatDate(value: string | null): string {
 
 export function GoalsPanel({
   employeeId,
-  department,
+  role,
+  managerId,
 }: {
   employeeId: string;
-  department: string | null;
+  role: EmployeeRole;
+  managerId: string | null;
 }) {
+  const selfApproves = bypassesGoalApproval(role, managerId);
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
   const [goals, setGoals] = useState<Goal[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -77,6 +85,9 @@ export function GoalsPanel({
     isExactly100(totalWeightage) &&
     goals.some((goal) => goal.status === "draft") &&
     !isSubmitting;
+  const hasPendingAssignedGoals = goals.some((goal) =>
+    isAssignedPending(goal.status),
+  );
 
   const load = useCallback(async () => {
     const supabase = getSupabase();
@@ -88,12 +99,11 @@ export function GoalsPanel({
 
     setError(null);
 
-    const departmentName = department?.trim() || null;
-
-    const selfQuery = supabase.from("employees").select("id").eq("id", employeeId);
-    const { data: self } = departmentName
-      ? await selfQuery.eq("department", departmentName).maybeSingle()
-      : await selfQuery.maybeSingle();
+    const { data: self } = await supabase
+      .from("employees")
+      .select("id")
+      .eq("id", employeeId)
+      .maybeSingle();
 
     if (!self) {
       setError("You can only load goals for your own employee record.");
@@ -144,7 +154,7 @@ export function GoalsPanel({
     }
 
     setIsLoading(false);
-  }, [department, employeeId]);
+  }, [employeeId]);
 
   useEffect(() => {
     void load();
@@ -154,12 +164,6 @@ export function GoalsPanel({
     event.preventDefault();
     if (!cycle) return;
 
-    const supabase = getSupabase();
-    if (!supabase) {
-      setError("Supabase is not configured.");
-      return;
-    }
-
     const form = event.currentTarget;
     const formData = new FormData(form);
     const title = String(formData.get("title") ?? "").trim();
@@ -167,29 +171,21 @@ export function GoalsPanel({
     const weightage = Number(formData.get("weightage"));
     const targetDate = String(formData.get("target_date") ?? "");
 
-    if (!title || Number.isNaN(weightage) || weightage < 0 || weightage > 100) {
-      setError("Enter a title and a weightage between 0 and 100.");
-      return;
-    }
-
     setIsSaving(true);
     setError(null);
 
-    const { error: insertError } = await supabase.from("goals").insert({
-      employee_id: employeeId,
-      cycle_id: cycle.id,
+    const result = await createGoal({
+      cycleId: cycle.id,
       title,
-      description: description || null,
+      description,
       weightage,
-      target_date: targetDate || null,
-      status: "draft" satisfies GoalStatus,
-      rejection_reason: null,
+      targetDate,
     });
 
     setIsSaving(false);
 
-    if (insertError) {
-      setError(insertError.message);
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
 
@@ -197,29 +193,18 @@ export function GoalsPanel({
     await load();
   }
 
-  async function handleSubmitForApproval() {
+  async function handleSubmitGoals() {
     if (!cycle || !canSubmit) return;
-
-    const supabase = getSupabase();
-    if (!supabase) {
-      setError("Supabase is not configured.");
-      return;
-    }
 
     setIsSubmitting(true);
     setError(null);
 
-    const { error: updateError } = await supabase
-      .from("goals")
-      .update({ status: "submitted" satisfies GoalStatus })
-      .eq("employee_id", employeeId)
-      .eq("cycle_id", cycle.id)
-      .eq("status", "draft");
+    const result = await submitDraftGoals(cycle.id);
 
     setIsSubmitting(false);
 
-    if (updateError) {
-      setError(updateError.message);
+    if (!result.ok) {
+      setError(result.error);
       return;
     }
 
@@ -230,6 +215,23 @@ export function GoalsPanel({
     setActingId(goalId);
     setError(null);
     const result = await acceptAssignedGoal(goalId);
+    setActingId(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    await load();
+  }
+
+  async function handleDeleteCompleted(goalId: string) {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this completed goal?",
+    );
+    if (!confirmed) return;
+
+    setActingId(goalId);
+    setError(null);
+    const result = await deleteCompletedGoal(goalId);
     setActingId(null);
     if (!result.ok) {
       setError(result.error);
@@ -278,8 +280,17 @@ export function GoalsPanel({
     <div className="space-y-8">
       <p className={mutedText}>
         Cycle: <span className="font-medium text-zinc-900">{cycle.name}</span>
-        . Assigned goals in <span className="font-medium">Pending</span> can be
-        accepted or rejected.
+        {selfApproves ? (
+          <>
+            . Your goals are saved as active immediately — no manager approval
+            is required.
+          </>
+        ) : hasPendingAssignedGoals ? (
+          <>
+            . Assigned goals in <span className="font-medium">Pending</span> can
+            be accepted or rejected.
+          </>
+        ) : null}
       </p>
 
       <form
@@ -330,7 +341,13 @@ export function GoalsPanel({
 
         <div className="sm:col-span-2">
           <button type="submit" disabled={isSaving} className={primaryBtn}>
-            {isSaving ? "Adding…" : "Add goal"}
+            {isSaving
+              ? selfApproves
+                ? "Saving…"
+                : "Adding…"
+              : selfApproves
+                ? "Save goal"
+                : "Add goal"}
           </button>
         </div>
       </form>
@@ -351,17 +368,24 @@ export function GoalsPanel({
         <button
           type="button"
           disabled={!canSubmit}
-          onClick={() => void handleSubmitForApproval()}
+          onClick={() => void handleSubmitGoals()}
           className={primaryBtn}
         >
-          {isSubmitting ? "Submitting…" : "Submit Goals for Approval"}
+          {isSubmitting
+            ? selfApproves
+              ? "Publishing…"
+              : "Submitting…"
+            : selfApproves
+              ? "Publish Goals"
+              : "Submit Goals for Approval"}
         </button>
       </div>
 
       {!isExactly100(totalWeightage) ? (
         <p className={mutedText}>
-          You can keep adding draft goals. Submit is available only when the
-          total weightage is exactly 100.
+          {selfApproves
+            ? "Keep adding goals until the total weightage is exactly 100, then publish."
+            : "You can keep adding draft goals. Submit is available only when the total weightage is exactly 100."}
         </p>
       ) : null}
 
@@ -371,7 +395,7 @@ export function GoalsPanel({
         {goals.length === 0 ? (
           <p className="px-6 py-16 text-center text-sm text-zinc-600">
             You have not added any goals for this cycle yet. Use the form
-            above to add your first draft.
+            above to add your first {selfApproves ? "goal" : "draft"}.
           </p>
         ) : (
           <table className="w-full text-left text-sm">
@@ -409,7 +433,7 @@ export function GoalsPanel({
                     </StatusBadge>
                   </td>
                   <td className="px-4 py-3">
-                    {isAssignedPending(goal.status) ? (
+                    {!selfApproves && isAssignedPending(goal.status) ? (
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -432,6 +456,15 @@ export function GoalsPanel({
                           Reject
                         </button>
                       </div>
+                    ) : isCompletedGoal(goal.status) ? (
+                      <button
+                        type="button"
+                        disabled={actingId === goal.id}
+                        onClick={() => void handleDeleteCompleted(goal.id)}
+                        className="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-medium text-rose-800 shadow-sm transition-colors duration-150 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {actingId === goal.id ? "Deleting…" : "Delete"}
+                      </button>
                     ) : (
                       <span className="text-xs text-zinc-400">—</span>
                     )}
@@ -443,7 +476,7 @@ export function GoalsPanel({
         )}
       </div>
 
-      {rejectingGoal ? (
+      {!selfApproves && rejectingGoal ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4"
           role="dialog"

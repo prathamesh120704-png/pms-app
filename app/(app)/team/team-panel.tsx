@@ -3,6 +3,7 @@
 import { createClient } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { assignGoalToEmployee } from "@/app/(app)/team/actions";
 import { StatusBadge, goalBadgeTone } from "@/components/status-badge";
 import {
   GOAL_SELECT,
@@ -54,13 +55,7 @@ function formatDate(value: string | null): string {
   return date.toLocaleDateString();
 }
 
-export function TeamPanel({
-  managerId,
-  department,
-}: {
-  managerId: string;
-  department: string | null;
-}) {
+export function TeamPanel({ managerId }: { managerId: string }) {
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
   const [reports, setReports] = useState<DirectReport[]>([]);
   const [goals, setGoals] = useState<Goal[]>([]);
@@ -72,6 +67,11 @@ export function TeamPanel({
   const [actingId, setActingId] = useState<string | null>(null);
   const [sendBackFor, setSendBackFor] = useState<string | null>(null);
   const [sendBackComment, setSendBackComment] = useState("");
+  const [assigningTo, setAssigningTo] = useState<DirectReport | null>(null);
+  const [assignTitle, setAssignTitle] = useState("");
+  const [assignDescription, setAssignDescription] = useState("");
+  const [assignDueDate, setAssignDueDate] = useState("");
+  const [isAssigning, setIsAssigning] = useState(false);
 
   const load = useCallback(async () => {
     const supabase = getSupabase();
@@ -97,19 +97,9 @@ export function TeamPanel({
       return;
     }
 
-    if (!department) {
-      setError("Your employee record has no department, so the team list is locked.");
-      setReports([]);
-      setGoals([]);
-      setPendingAppraisals([]);
-      setIsLoading(false);
-      return;
-    }
-
     const { data: reportRows, error: reportError } = await supabase
       .from("employees")
       .select("id, full_name, designation, email")
-      .eq("department", department)
       .eq("manager_id", managerId)
       .eq("is_active", true)
       .order("full_name");
@@ -138,7 +128,7 @@ export function TeamPanel({
       .from("goals")
       .select(GOAL_SELECT)
       .eq("cycle_id", openCycle.id)
-      .in("status", ["submitted", "rejected"])
+      .in("status", ["submitted", "rejected", "pending"])
       .in("employee_id", reportIds)
       .order("title");
 
@@ -179,7 +169,7 @@ export function TeamPanel({
     }
 
     setIsLoading(false);
-  }, [department, managerId]);
+  }, [managerId]);
 
   useEffect(() => {
     void load();
@@ -189,6 +179,22 @@ export function TeamPanel({
     const grouped = new Map<string, Goal[]>();
     for (const goal of goals) {
       if (goal.status !== "submitted") continue;
+      const list = grouped.get(goal.employee_id) ?? [];
+      list.push(goal);
+      grouped.set(goal.employee_id, list);
+    }
+    return reports
+      .map((report) => ({
+        report,
+        goals: grouped.get(report.id) ?? [],
+      }))
+      .filter((group) => group.goals.length > 0);
+  }, [goals, reports]);
+
+  const pendingByEmployee = useMemo(() => {
+    const grouped = new Map<string, Goal[]>();
+    for (const goal of goals) {
+      if (goal.status !== "pending") continue;
       const list = grouped.get(goal.employee_id) ?? [];
       list.push(goal);
       grouped.set(goal.employee_id, list);
@@ -266,6 +272,43 @@ export function TeamPanel({
     setSendBackComment("");
   }
 
+  async function handleAssignGoal() {
+    if (!assigningTo || !cycle) return;
+
+    const title = assignTitle.trim();
+    const description = assignDescription.trim();
+    const dueDate = assignDueDate.trim();
+
+    if (!title || !description || !dueDate) {
+      setError("Title, description, and due date are all required.");
+      return;
+    }
+
+    setIsAssigning(true);
+    setError(null);
+
+    const result = await assignGoalToEmployee({
+      employeeId: assigningTo.id,
+      cycleId: cycle.id,
+      title,
+      description,
+      dueDate,
+    });
+
+    setIsAssigning(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    setAssigningTo(null);
+    setAssignTitle("");
+    setAssignDescription("");
+    setAssignDueDate("");
+    await load();
+  }
+
   if (isLoading) {
     return (
       <p className={`px-6 py-16 text-center ${mutedText}`}>
@@ -283,8 +326,7 @@ export function TeamPanel({
   if (reports.length === 0) {
     return (
       <p className={emptyState}>
-        No one in your department reports to you yet, so there is nothing to
-        approve.
+        No direct reports assigned to you yet, so there is nothing to approve.
       </p>
     );
   }
@@ -293,11 +335,83 @@ export function TeamPanel({
     <div className="space-y-6">
       <p className={mutedText}>
         Open cycle: <span className="font-medium text-zinc-900">{cycle.name}</span>
-        . Submitted goals wait for approval. Rejected assigned goals stay visible
-        with the employee’s reason.
+        . Assign goals to direct reports, approve submitted goals, and review
+        rejections.
       </p>
 
       {error ? <p className={errorText}>{error}</p> : null}
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">Direct Reports</h2>
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {reports.map((report) => (
+            <li key={report.id} className={`${glassCard} flex flex-col justify-between p-5`}>
+              <div>
+                <p className="font-medium text-zinc-900">{report.full_name}</p>
+                <p className="mt-1 text-sm text-zinc-400">
+                  {report.designation ?? "No designation"}
+                </p>
+                <p className="mt-1 text-sm text-zinc-500">{report.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setError(null);
+                  setAssigningTo(report);
+                  setAssignTitle("");
+                  setAssignDescription("");
+                  setAssignDueDate("");
+                }}
+                className={`${primaryBtn} mt-4 w-fit`}
+              >
+                Assign Goal
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold tracking-tight">
+          Assigned Goals Awaiting Response
+        </h2>
+        {pendingByEmployee.length === 0 ? (
+          <p className={emptyState}>
+            No assigned goals are waiting for an employee to accept or reject.
+          </p>
+        ) : (
+          pendingByEmployee.map(({ report, goals: employeeGoals }) => (
+            <section key={report.id} className={`overflow-hidden ${glassPanel}`}>
+              <div className="border-b border-zinc-200/80 px-4 py-3">
+                <h2 className="text-base font-semibold tracking-tight">
+                  {report.full_name}
+                </h2>
+                <p className="text-sm text-zinc-400">
+                  {report.designation ?? "No designation"}
+                </p>
+              </div>
+              <ul className="divide-y divide-zinc-200">
+                {employeeGoals.map((goal) => (
+                  <li key={goal.id} className="px-4 py-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium text-zinc-900">{goal.title}</p>
+                      <StatusBadge tone={goalBadgeTone(goal.status)}>
+                        {goalStatusLabel[goal.status]}
+                      </StatusBadge>
+                    </div>
+                    <p className="mt-1 text-sm text-zinc-600">
+                      {goal.description ?? "—"}
+                    </p>
+                    <p className="mt-2 text-xs text-zinc-400">
+                      Due {formatDate(goal.target_date)}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        )}
+      </section>
 
       <section className="space-y-4">
         <h2 className="text-lg font-semibold tracking-tight">
@@ -486,6 +600,89 @@ export function TeamPanel({
           </ul>
         )}
       </section>
+
+      {assigningTo ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-900/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="assign-goal-title"
+        >
+          <div className="w-full max-w-lg rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <h2
+              id="assign-goal-title"
+              className="text-lg font-semibold tracking-tight text-zinc-900"
+            >
+              Assign goal
+            </h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              Create a goal for{" "}
+              <span className="font-medium text-zinc-900">
+                {assigningTo.full_name}
+              </span>
+              . They must accept or reject it on their goals page.
+            </p>
+            <label className="mt-4 block text-sm font-medium text-zinc-600">
+              Title
+              <input
+                type="text"
+                required
+                value={assignTitle}
+                onChange={(event) => setAssignTitle(event.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="mt-4 block text-sm font-medium text-zinc-600">
+              Description
+              <textarea
+                required
+                rows={4}
+                value={assignDescription}
+                onChange={(event) => setAssignDescription(event.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <label className="mt-4 block text-sm font-medium text-zinc-600">
+              Due date
+              <input
+                type="date"
+                required
+                value={assignDueDate}
+                onChange={(event) => setAssignDueDate(event.target.value)}
+                className={inputClass}
+              />
+            </label>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={isAssigning}
+                onClick={() => {
+                  setAssigningTo(null);
+                  setAssignTitle("");
+                  setAssignDescription("");
+                  setAssignDueDate("");
+                }}
+                className={secondaryBtn}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={
+                  isAssigning ||
+                  !assignTitle.trim() ||
+                  !assignDescription.trim() ||
+                  !assignDueDate
+                }
+                onClick={() => void handleAssignGoal()}
+                className={primaryBtn}
+              >
+                {isAssigning ? "Assigning…" : "Assign Goal"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

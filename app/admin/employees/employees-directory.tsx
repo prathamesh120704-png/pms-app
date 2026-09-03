@@ -51,11 +51,7 @@ function managerFullName(manager: ManagerEmbed): string {
   return manager.full_name || "—";
 }
 
-export function EmployeesDirectory({
-  department,
-}: {
-  department: string | null;
-}) {
+export function EmployeesDirectory() {
   const [employees, setEmployees] = useState<EmployeeListRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -69,12 +65,6 @@ export function EmployeesDirectory({
       return;
     }
 
-    if (!department) {
-      setEmployees([]);
-      setIsLoading(false);
-      return;
-    }
-
     const supabase = createClient(url, anonKey);
 
     void supabase
@@ -82,13 +72,13 @@ export function EmployeesDirectory({
       .select(
         "id, full_name, designation, department, role, is_active, manager:manager_id(full_name)",
       )
-      .eq("department", department)
+      .eq("is_active", true)
       .order("full_name")
       .then(({ data }) => {
         setEmployees((data as EmployeeListRow[] | null) ?? []);
         setIsLoading(false);
       });
-  }, [department]);
+  }, []);
 
   return (
     <div className={`${pageMain} min-h-full`}>
@@ -97,7 +87,7 @@ export function EmployeesDirectory({
           <div>
             <h1 className={pageTitle}>Employees</h1>
             <p className={pageSubtitle}>
-              People in {department ?? "your department"} and who they report to.
+              All active employees and who they report to.
             </p>
           </div>
           <Link href="/admin/employees/new" className={primaryBtn}>
@@ -112,7 +102,7 @@ export function EmployeesDirectory({
             </p>
           ) : employees.length === 0 ? (
             <p className="px-6 py-16 text-center text-sm text-zinc-600">
-              No employees in your department yet. Add people to see them here.
+              No active employees yet. Add people to see them here.
             </p>
           ) : (
             <table className="w-full text-left text-sm">

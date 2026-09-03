@@ -18,20 +18,28 @@ export function SeedTestOrganizationButton() {
     });
     const payload = (await response.json()) as {
       error?: string;
-      inserted?: number;
-      updated?: number;
-      goalsInserted?: number;
+      cycleId?: string | null;
+      cycleCreated?: boolean;
+      activeEmployees?: number;
+      hrAdminEmail?: string | null;
     };
 
     setIsSeeding(false);
 
     if (!response.ok) {
-      setError(payload.error ?? "Could not seed the test organization.");
+      setError(payload.error ?? "Could not seed the environment.");
+      return;
+    }
+
+    if (!payload.cycleId) {
+      setMessage(
+        "No active employees found yet. Add your manager, employee, and HR admin records first, then run seed again to open a review cycle.",
+      );
       return;
     }
 
     setMessage(
-      `Seeded Engineering, Sales, Marketing, and Operations (inserted ${payload.inserted ?? 0}, updated ${payload.updated ?? 0}, pending goals ${payload.goalsInserted ?? 0}). Sign in with a department email such as manager_ops@test.com.`,
+      `Environment ready. ${payload.activeEmployees ?? 0} active employee(s), open cycle ${payload.cycleCreated ? "created" : "already open"}${payload.hrAdminEmail ? ` (HR: ${payload.hrAdminEmail})` : ""}.`,
     );
   }
 
@@ -43,7 +51,7 @@ export function SeedTestOrganizationButton() {
         onClick={() => void handleSeed()}
         className={secondaryBtn}
       >
-        {isSeeding ? "Seeding…" : "Seed Test Organization"}
+        {isSeeding ? "Seeding…" : "Seed Environment"}
       </button>
       {error ? <p className={errorText}>{error}</p> : null}
       {message ? <p className="text-sm text-zinc-600">{message}</p> : null}

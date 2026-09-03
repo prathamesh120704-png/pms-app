@@ -1,4 +1,3 @@
-import { scopedDepartment } from "@/lib/department-scope";
 import { getCurrentEmployee } from "@/lib/get-current-employee";
 import { redirect } from "next/navigation";
 import { pageMain, pageSubtitle, pageTitle } from "@/lib/ui";
@@ -11,17 +10,14 @@ export default async function MyTeamPage() {
     redirect("/dashboard");
   }
 
-  const department = scopedDepartment(employee.department);
-
   return (
     <main className={pageMain}>
       <h1 className={pageTitle}>My Team</h1>
       <p className={pageSubtitle}>
-        Review submitted and rejected goals from people in{" "}
-        {department ?? "your department"}.
+        Assign goals to direct reports, review submitted goals, and follow up on rejections.
       </p>
       <div className="mt-8">
-        <TeamPanel managerId={employee.id} department={department} />
+        <TeamPanel managerId={employee.id} />
       </div>
     </main>
   );

@@ -118,7 +118,7 @@ const badgeTone: Record<PipelineStatus, BadgeTone> = {
   Completed: "success",
 };
 
-export function HrDashboard({ department }: { department: string | null }) {
+export function HrDashboard() {
   const [cycle, setCycle] = useState<OpenCycle | null>(null);
   const [rows, setRows] = useState<TrackingRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -158,18 +158,9 @@ export function HrDashboard({ department }: { department: string | null }) {
     const openCycle = cycleRow as OpenCycle;
     setCycle(openCycle);
 
-    if (!department) {
-      setError("Your employee record has no department, so this dashboard is locked.");
-      setCycle(null);
-      setRows([]);
-      setIsLoading(false);
-      return;
-    }
-
     const { data: employeeRows, error: employeeError } = await supabase
       .from("employees")
       .select("id, full_name, email, manager_id, role, is_active, created_at")
-      .eq("department", department)
       .eq("is_active", true)
       .order("full_name");
 
@@ -182,23 +173,23 @@ export function HrDashboard({ department }: { department: string | null }) {
     const everyone = (employeeRows as EmployeeRow[] | null) ?? [];
     const tracked = everyone.filter((person) => person.role !== "hr_admin");
     const names = new Map(everyone.map((person) => [person.id, person.full_name]));
-    const departmentIds = everyone.map((person) => person.id);
+    const employeeIds = tracked.map((person) => person.id);
 
     const [{ data: reviewRows }, { data: goalRows }] = await Promise.all([
-      departmentIds.length === 0
+      employeeIds.length === 0
         ? Promise.resolve({ data: [] })
         : supabase
             .from("reviews")
             .select("employee_id, status, submitted_at, reviewed_at")
             .eq("cycle_id", openCycle.id)
-            .in("employee_id", departmentIds),
-      departmentIds.length === 0
+            .in("employee_id", employeeIds),
+      employeeIds.length === 0
         ? Promise.resolve({ data: [] })
         : supabase
             .from("goals")
             .select("employee_id, status")
             .eq("cycle_id", openCycle.id)
-            .in("employee_id", departmentIds),
+            .in("employee_id", employeeIds),
     ]);
 
     const reviewsByEmployee = new Map(
@@ -230,7 +221,7 @@ export function HrDashboard({ department }: { department: string | null }) {
       }),
     );
     setIsLoading(false);
-  }, [department]);
+  }, []);
 
   useEffect(() => {
     void load();
@@ -312,7 +303,7 @@ export function HrDashboard({ department }: { department: string | null }) {
       <div className={tableWrap}>
         {rows.length === 0 ? (
           <p className="px-6 py-16 text-center text-sm text-zinc-600">
-            No employees in your department to track for this cycle yet.
+            No active employees to track for this cycle yet.
           </p>
         ) : (
           <table className="w-full text-left text-sm">

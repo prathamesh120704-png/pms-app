@@ -44,14 +44,8 @@ async function main() {
   const supabase = createClient(url, key);
   const result = await seedTestOrganization(supabase);
   console.log(
-    `Seed complete. inserted=${result.inserted} updated=${result.updated} goalsInserted=${result.goalsInserted} cycleId=${result.cycleId}`,
+    `Seed complete. activeEmployees=${result.activeEmployees} cycleId=${result.cycleId} cycleCreated=${result.cycleCreated} hrAdmin=${result.hrAdminEmail ?? "none"}`,
   );
-  for (const dept of result.departments) {
-    console.log(`\n${dept.name} (manager ${dept.managerId})`);
-    for (const email of dept.emails) {
-      console.log(`  ${email}`);
-    }
-  }
 }
 
 void main().catch((error) => {

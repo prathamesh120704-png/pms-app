@@ -30,7 +30,7 @@ export const goalStatusLabel: Record<GoalStatus, string> = {
   approved: "Approved",
   sent_back: "Sent back",
   pending: "Pending",
-  accepted: "Accepted",
+  accepted: "Active",
   rejected: "Rejected",
   completed: "Completed",
 };
@@ -39,6 +39,17 @@ export function isAssignedPending(status: GoalStatus): boolean {
   return status === "pending";
 }
 
+export function isCompletedGoal(status: GoalStatus): boolean {
+  return status === "completed";
+}
+
 export function isManagerApprovedForReview(status: GoalStatus): boolean {
   return status === "approved" || status === "accepted";
+}
+
+export function bypassesGoalApproval(
+  role: "employee" | "manager" | "hr_admin",
+  managerId: string | null,
+): boolean {
+  return role === "manager" || managerId === null;
 }

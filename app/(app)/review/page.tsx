@@ -18,7 +18,7 @@ export default async function MyReviewPage() {
             employeeId={employee.id}
             employeeName={employee.full_name}
             managerId={employee.manager_id}
-            department={employee.department}
+            role={employee.role}
           />
         ) : (
           <p className="text-sm text-zinc-600">
